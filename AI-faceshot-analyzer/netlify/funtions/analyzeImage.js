@@ -1,0 +1,49 @@
+exports.handler = async function (event) {
+  // 클라이언트(브라우저)가 보낸 요청에서 이미지 데이터를 추출합니다.
+  const { imageBase64 } = JSON.parse(event.body);
+  const prompt = `You are a brutally honest but fair profile picture evaluator... (기존 프롬프트와 동일하게 작성)`;
+
+  // Netlify 환경 변수에서 안전하게 API 키를 가져옵니다.
+  const apiKey = process.env.GEMINI_API_KEY;
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inlineData: {
+              mimeType: "image/jpeg",
+              data: imageBase64.split(",")[1],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  try {
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API call failed with status ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify(result),
+    };
+  } catch (error) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message }),
+    };
+  }
+};
