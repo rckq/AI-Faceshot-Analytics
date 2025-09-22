@@ -388,7 +388,6 @@
         switchView("loading-section");
 
         // 1. 개인정보 구글 시트로 전송
-        // 중요: 아래 URL은 반드시 'Google Apps Script 연동 안내'에 따라 새로 배포하여 얻은 URL로 교체해야 합니다.
         const scriptURL =
           "https://script.google.com/macros/s/AKfycbzdGyPc2lzx_2-L3YLt4R87sWh2m7pFwmEWh1MhbeZqy0qu1et6ARXv6AlYxn0G-xmk/exec";
         const formData = new FormData();
@@ -397,7 +396,6 @@
         formData.append("timestamp", new Date().toLocaleString("ko-KR"));
         formData.append("image", uploadedImageBase64);
 
-        // 구글 시트 전송은 백그라운드에서 실행
         fetch(scriptURL, { method: "POST", body: formData })
           .then((response) =>
             console.log("Successfully submitted to Google Sheet", response)
@@ -407,7 +405,6 @@
           );
 
         try {
-          // 2. 실제 인물 사진인지 검증 (1.5초 딜레이)
           await new Promise((resolve) => setTimeout(resolve, 1500));
 
           const validationPrompt =
@@ -423,7 +420,6 @@
             return;
           }
 
-          // 3. 사진 평가 요청
           const analysisPrompt = `You are a brutally honest but fair profile picture evaluator with a witty and friendly personality. Analyze this image on a scale of 0 to 100 for '인물' (Figure), '배경' (Background), and '감성' (Vibe). Provide the response in a JSON object format. The JSON object must contain these keys: 'figureScore', 'backgroundScore', 'vibeScore', 'figureCritique', 'backgroundCritique', 'vibeCritique', and 'finalCritique'. The critiques must be in Korean, brutally honest, helpful, and written in a cute, friendly tone. The 'finalCritique' must be a single, sharp, and witty summary sentence in Korean.`;
           const analysisResultText = await callGeminiAPI(
             analysisPrompt,
@@ -438,22 +434,23 @@
           displayResults(analysisResult);
         } catch (error) {
           console.error("Error during analysis:", error);
-          showAlert("분석 중 오류가 발생했어요. 다시 시도해 주세요!");
+          // showAlert("분석 중 오류가 발생했어요. 다시 시도해 주세요!");
           resetToUpload();
         }
       });
 
-      // Gemini API 호출 함수
+      // Gemini API 호출 함수 (수정됨)
       async function callGeminiAPI(prompt, imageBase64) {
-        // Google API가 아닌, 우리 웹사이트의 서버리스 함수 주소를 호출합니다.
         const apiUrl = `/.netlify/functions/analyzeImage`;
-
         try {
           const response = await fetch(apiUrl, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            // 이미지 데이터를 서버리스 함수로 보냅니다.
-            body: JSON.stringify({ imageBase64: imageBase64 }),
+            // *** FIX: prompt와 imageBase64를 함께 보냅니다. ***
+            body: JSON.stringify({
+              prompt: prompt, // <-- 이 부분을 추가!
+              imageBase64: imageBase64,
+            }),
           });
 
           if (!response.ok) {
@@ -464,6 +461,16 @@
 
           const result = await response.json();
 
+          // AI가 유해성 등으로 답변을 거부했을 경우의 처리
+          if (result.promptFeedback && result.promptFeedback.blockReason) {
+            console.error(
+              "Analysis blocked by API:",
+              result.promptFeedback.blockReason
+            );
+            showAlert("AI가 분석을 거부했어요. 다른 사진으로 시도해보세요.");
+            throw new Error("API content blocked");
+          }
+
           if (result.candidates && result.candidates[0].content.parts[0].text) {
             return result.candidates[0].content.parts[0].text;
           } else {
@@ -473,10 +480,11 @@
           }
         } catch (error) {
           console.error("Error calling serverless function:", error);
-          // 사용자에게 오류를 알리는 로직 (예: showAlert)
-          showAlert(
-            "분석 중 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
-          );
+          if (error.message !== "API content blocked") {
+            showAlert(
+              "분석 중 서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+            );
+          }
           throw error; // 오류를 다시 던져서 후속 처리를 막습니다.
         }
       }
