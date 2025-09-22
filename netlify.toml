@@ -1,5 +1,0 @@
-    # Netlify Build & Functions Settings
-    [build]
-      # 서버리스 함수가 들어있는 디렉토리 경로
-      functions = "netlify/functions"
-    
